@@ -356,6 +356,11 @@ class PgVector(VectorDB):
                     "ALTER TABLE public.{table_name} ALTER COLUMN embedding SET STORAGE PLAIN;"
                 ).format(table_name=sql.Identifier(self.table_name))
             )
+            self.cursor.execute(
+                sql.SQL(
+                    "select create_distributed_table('public.{table_name}', 'id');"
+                ).format(table_name=sql.Identifier(self.table_name))
+            )
             self.conn.commit()
         except Exception as e:
             log.warning(

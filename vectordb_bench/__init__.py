@@ -52,7 +52,7 @@ class config:
     OPTIMIZE_TIMEOUT_768D_100M  =  50 * 3600 # 50h
 
 
-    OPTIMIZE_TIMEOUT_1536D_500K =  15 * 60   # 15min
+    OPTIMIZE_TIMEOUT_1536D_500K =  60 * 60 * 2  # 2 h
     OPTIMIZE_TIMEOUT_1536D_5M   =   2.5 * 3600 # 2.5h
     def display(self) -> str:
         tmp = [
