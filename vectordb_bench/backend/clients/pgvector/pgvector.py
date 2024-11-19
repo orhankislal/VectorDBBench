@@ -2,6 +2,7 @@
 
 import logging
 import pprint
+import random
 from contextlib import contextmanager
 from typing import Any, Generator, Optional, Tuple, Sequence
 
@@ -160,10 +161,11 @@ class PgVector(VectorDB):
                 ]
             )
         else:
+
             self._unfiltered_search = sql.Composed(
                 [
-                    sql.SQL("SELECT id FROM public.{} ORDER BY embedding ").format(
-                        sql.Identifier(self.table_name)
+                    sql.SQL("SELECT id FROM public.{} where id2 = {} ORDER BY embedding ").format(
+                        sql.Identifier(self.table_name, random.randrange(127))
                     ),
                     sql.SQL(self.case_config.search_param()["metric_fun_op"]),
                     sql.SQL(" %s::vector LIMIT %s::int"),
@@ -346,6 +348,7 @@ class PgVector(VectorDB):
             log.info(f"{self.name} client create table : {self.table_name}")
 
             # create table
+            
             self.cursor.execute(
                 sql.SQL(
                     "CREATE TABLE IF NOT EXISTS public.{table_name} (id BIGINT PRIMARY KEY, embedding vector({dim}));"
@@ -358,9 +361,16 @@ class PgVector(VectorDB):
             )
             self.cursor.execute(
                 sql.SQL(
-                    "select create_distributed_table('public.{table_name}', 'id');"
+                    """SELECT run_command_on_shards(
+                        'public.{table_name}',
+                        $cmd$
+                            ALTER TABLE %s ALTER COLUMN embedding SET STORAGE PLAIN;
+                        $cmd$
+                    );"""
                 ).format(table_name=sql.Identifier(self.table_name))
             )
+
+            
             self.conn.commit()
         except Exception as e:
             log.warning(
@@ -394,6 +404,24 @@ class PgVector(VectorDB):
             if kwargs.get("last_batch"):
                 self._post_insert()
 
+            self.cursor.execute(
+                sql.SQL(
+                    "alter table public.{table_name} add column id2;"
+                ).format(table_name=sql.Identifier(self.table_name))
+            )
+
+            self.cursor.execute(
+                sql.SQL(
+                    "update public.{table_name} set id2 = id % 128;"
+                ).format(table_name=sql.Identifier(self.table_name))
+            )
+            
+            self.cursor.execute(
+                sql.SQL(
+                    "select create_distributed_table('public.{table_name}', 'id2', shard_count:=32);"
+                ).format(table_name=sql.Identifier(self.table_name))
+            )
+
             return len(metadata), None
         except Exception as e:
             log.warning(
@@ -418,6 +446,7 @@ class PgVector(VectorDB):
                     self._filtered_search, (gt, q, k), prepare=True, binary=True
                     )
         else:
+            log.info(self._unfiltered_search.as_string(self.cursor) % (q, k))
             result = self.cursor.execute(
                     self._unfiltered_search, (q, k), prepare=True, binary=True
                     )
