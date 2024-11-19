@@ -165,7 +165,7 @@ class PgVector(VectorDB):
             self._unfiltered_search = sql.Composed(
                 [
                     sql.SQL("SELECT id FROM public.{} where id2 = {} ORDER BY embedding ").format(
-                        sql.Identifier(self.table_name, random.randrange(127))
+                        sql.Identifier(self.table_name), random.randrange(127)
                     ),
                     sql.SQL(self.case_config.search_param()["metric_fun_op"]),
                     sql.SQL(" %s::vector LIMIT %s::int"),
@@ -351,7 +351,7 @@ class PgVector(VectorDB):
             
             self.cursor.execute(
                 sql.SQL(
-                    "CREATE TABLE IF NOT EXISTS public.{table_name} (id BIGINT PRIMARY KEY, embedding vector({dim}));"
+                    "CREATE TABLE IF NOT EXISTS public.{table_name} (id BIGINT, embedding vector({dim}));"
                 ).format(table_name=sql.Identifier(self.table_name), dim=dim)
             )
             self.cursor.execute(
@@ -404,24 +404,6 @@ class PgVector(VectorDB):
             if kwargs.get("last_batch"):
                 self._post_insert()
 
-            self.cursor.execute(
-                sql.SQL(
-                    "alter table public.{table_name} add column id2;"
-                ).format(table_name=sql.Identifier(self.table_name))
-            )
-
-            self.cursor.execute(
-                sql.SQL(
-                    "update public.{table_name} set id2 = id % 128;"
-                ).format(table_name=sql.Identifier(self.table_name))
-            )
-            
-            self.cursor.execute(
-                sql.SQL(
-                    "select create_distributed_table('public.{table_name}', 'id2', shard_count:=32);"
-                ).format(table_name=sql.Identifier(self.table_name))
-            )
-
             return len(metadata), None
         except Exception as e:
             log.warning(
@@ -452,3 +434,27 @@ class PgVector(VectorDB):
                     )
 
         return [int(i[0]) for i in result.fetchall()]
+
+    def add_filter_column(self):
+        assert self.conn is not None, "Connection is not initialized"
+        assert self.cursor is not None, "Cursor is not initialized"
+        self.cursor.execute(
+            sql.SQL(
+                "alter table public.{table_name} add column id2 integer;"
+            ).format(table_name=sql.Identifier(self.table_name))
+        )
+        self.conn.commit()
+
+        self.cursor.execute(
+            sql.SQL(
+                "update public.{table_name} set id2 = id % 128;"
+            ).format(table_name=sql.Identifier(self.table_name))
+        )
+        self.conn.commit()
+        
+        self.cursor.execute(
+            sql.SQL(
+                "select create_distributed_table('public.{table_name}', 'id2', shard_count:=32);"
+            ).format(table_name=sql.Identifier(self.table_name))
+        )
+        self.conn.commit()
